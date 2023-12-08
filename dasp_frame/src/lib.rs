@@ -564,8 +564,10 @@ impl_frame_for_sample! {
     i8 i16 i32 i64 u8 u16 u32 u64 f32 f64
 }
 impl_frame_for_sample! {
+    dasp_sample::types::I12
     dasp_sample::types::I24
     dasp_sample::types::I48
+    dasp_sample::types::U12
     dasp_sample::types::U24
     dasp_sample::types::U48
 }

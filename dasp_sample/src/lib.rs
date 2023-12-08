@@ -11,7 +11,7 @@
 extern crate alloc;
 
 pub use conv::{Duplex, FromSample, ToSample};
-pub use types::{I24, I48, U24, U48};
+pub use types::{I12, I24, I48, U12, U24, U48};
 
 pub mod conv;
 mod ops;
@@ -260,12 +260,14 @@ macro_rules! impl_sample {
 // Expands to `Sample` implementations for all of the following types.
 impl_sample! {
     i8:  Signed: i8,  Float: f32, EQUILIBRIUM: 0,
+    I12: Signed: I12, Float: f32, EQUILIBRIUM: types::i12::EQUILIBRIUM,
     i16: Signed: i16, Float: f32, EQUILIBRIUM: 0,
     I24: Signed: I24, Float: f32, EQUILIBRIUM: types::i24::EQUILIBRIUM,
     i32: Signed: i32, Float: f32, EQUILIBRIUM: 0,
     I48: Signed: I48, Float: f64, EQUILIBRIUM: types::i48::EQUILIBRIUM,
     i64: Signed: i64, Float: f64, EQUILIBRIUM: 0,
     u8:  Signed: i8,  Float: f32, EQUILIBRIUM: 128,
+    U12: Signed: i16, Float: f32, EQUILIBRIUM: types::u12::EQUILIBRIUM,
     u16: Signed: i16, Float: f32, EQUILIBRIUM: 32_768,
     U24: Signed: i32, Float: f32, EQUILIBRIUM: types::u24::EQUILIBRIUM,
     u32: Signed: i32, Float: f32, EQUILIBRIUM: 2_147_483_648,
@@ -287,7 +289,7 @@ pub trait SignedSample:
 {
 }
 macro_rules! impl_signed_sample { ($($T:ty)*) => { $( impl SignedSample for $T {} )* } }
-impl_signed_sample!(i8 i16 I24 i32 I48 i64 f32 f64);
+impl_signed_sample!(i8 I12 i16 I24 i32 I48 i64 f32 f64);
 
 /// Sample format types represented as floating point numbers.
 ///

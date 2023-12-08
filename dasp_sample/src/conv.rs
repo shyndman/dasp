@@ -13,12 +13,19 @@
 //! Note that floating point conversions use the range -1.0 <= v < 1.0:
 //! `(1.0 as f64).to_sample::<i16>()` will overflow!
 
-use crate::types::{I24, I48, U24, U48};
+use crate::types::{I12, I24, I48, U12, U24, U48};
 
 macro_rules! conversion_fn {
     ($Rep:ty, $s:ident to_i8 { $body:expr }) => {
         #[inline]
         pub fn to_i8($s: $Rep) -> i8 {
+            $body
+        }
+    };
+
+    ($Rep:ty, $s:ident to_i12 { $body:expr }) => {
+        #[inline]
+        pub fn to_i12($s: $Rep) -> I12 {
             $body
         }
     };
@@ -61,6 +68,13 @@ macro_rules! conversion_fn {
     ($Rep:ty, $s:ident to_u8 { $body:expr }) => {
         #[inline]
         pub fn to_u8($s: $Rep) -> u8 {
+            $body
+        }
+    };
+
+    ($Rep:ty, $s:ident to_u12 { $body:expr }) => {
+        #[inline]
+        pub fn to_u12($s: $Rep) -> U12 {
             $body
         }
     };
@@ -126,13 +140,15 @@ macro_rules! conversion_fns {
 macro_rules! conversions {
     ($T:ident, $mod_name:ident { $($rest:tt)* }) => {
         pub mod $mod_name {
-            use $crate::types::{I24, U24, I48, U48};
+            use $crate::types::{I12, U12, I24, U24, I48, U48};
             conversion_fns!($T, $($rest)*);
         }
     };
 }
 
 conversions!(i8, i8 {
+    s to_i12 { I12::new_unchecked((s as i16) << 4) }
+    s to_u12 { U12::new_unchecked((s as i16 + 128) << 4) }
     s to_i16 { (s as i16) << 8 }
     s to_i24 { I24::new_unchecked((s as i32) << 16) }
     s to_i32 { (s as i32) << 24 }
@@ -181,7 +197,54 @@ conversions!(i8, i8 {
     }
 });
 
+conversions!(I12, i12 {
+    s to_u12 {
+        U12::new_unchecked(s.inner() + 2048)
+    }
+    s to_i8 { (s.inner() >> 4) as i8 }
+    s to_i16 { (s.inner() as i16) << 4 }
+    s to_i24 {
+        I24::new_unchecked((s.inner() as i32) << 12)
+    }
+    s to_i32 { (s.inner() as i32) << 20 }
+    s to_i48 { I48::new_unchecked((s.inner() as i64) << 36) }
+    s to_i64 { (s.inner() as i64) << 52 }
+    s to_u8 {
+        super::i8::to_u8(to_i8(s))
+    }
+    s to_u16 {
+        super::i16::to_u16(to_i16(s))
+    }
+    s to_u24 {
+        U24::new_unchecked((s.inner() as i32 + 2048) << 12)
+    }
+    s to_u32 {
+        ((s.inner() + 2048) as u32) << 20
+    }
+    s to_u48 {
+        U48::new_unchecked((s.inner() as i64 + 2048) << 36)
+    }
+    s to_u64 {
+        ((s.inner() + 2048) as u64) << 52
+    }
+    s to_f32 {
+        s.inner() as f32 / 2048.0
+    }
+    s to_f64 {
+        s.inner() as f64 / 2048.0
+    }
+});
+
 conversions!(i16, i16 {
+    s to_i12 { I12::new_unchecked(s >> 4) }
+    s to_u12 {
+        if s < 0 {
+            U12::new_unchecked(((s + 32_767 + 1) as i16) >> 4)
+        } else {
+            U12::new_unchecked((s  + 32_767 + 1) as i16 >> 4)
+        }
+    }
+
     s to_i8 { (s >> 8) as i8 }
     s to_i24 { I24::new_unchecked((s as i32) << 8) }
     s to_i32 { (s as i32) << 16 }
@@ -236,6 +299,7 @@ conversions!(i16, i16 {
 
 conversions!(I24, i24 {
     s to_i8 { (s.inner() >> 16) as i8 }
+    s to_i12 { I12::new_unchecked((s.inner() >> 12) as i16) }
     s to_i16 { (s.inner() >> 8) as i16 }
     s to_i32 { s.inner() << 8 }
     s to_i48 { I48::new_unchecked((s.inner() as i64) << 24) }
@@ -243,6 +307,7 @@ conversions!(I24, i24 {
     s to_u8 {
         super::i8::to_u8(to_i8(s))
     }
+    s to_u12 { super::i12::to_u12(to_i12(s)) }
     s to_u16 {
         super::i16::to_u16(to_i16(s))
     }
@@ -268,12 +333,16 @@ conversions!(I24, i24 {
 
 conversions!(i32, i32 {
     s to_i8 { (s >> 24) as i8 }
+    s to_i12 { I12::new_unchecked((s >> 20) as i16) }
     s to_i16 { (s >> 16) as i16 }
     s to_i24 { I24::new_unchecked(s >> 8) }
     s to_i48 { I48::new_unchecked((s as i64) << 16) }
     s to_i64 { (s as i64) << 32 }
     s to_u8 {
         super::i8::to_u8(to_i8(s))
+    }
+    s to_u12 {
+        super::i12::to_u12(to_i12(s))
     }
     s to_u16 {
         super::i16::to_u16(to_i16(s))
@@ -308,12 +377,16 @@ conversions!(i32, i32 {
 
 conversions!(I48, i48 {
     s to_i8 { (s.inner() >> 40) as i8 }
+    s to_i12 { I12::new_unchecked((s.inner() >> 36) as i16) }
     s to_i16 { (s.inner() >> 32) as i16 }
     s to_i24 { I24::new_unchecked((s.inner() >> 24) as i32) }
     s to_i32 { (s.inner() >> 16) as i32 }
     s to_i64 { s.inner() << 16 }
     s to_u8 {
         super::i8::to_u8(to_i8(s))
+    }
+    s to_u12 {
+        super::i12::to_u12(to_i12(s))
     }
     s to_u16 {
         super::i16::to_u16(to_i16(s))
@@ -340,12 +413,16 @@ conversions!(I48, i48 {
 
 conversions!(i64, i64 {
     s to_i8 { (s >> 56) as i8 }
+    s to_i12 { I12::new_unchecked((s >> 52) as i16) }
     s to_i16 { (s >> 48) as i16 }
     s to_i24 { I24::new_unchecked((s >> 40) as i32) }
     s to_i32 { (s >> 32) as i32 }
     s to_i48 { I48::new_unchecked(s >> 16) }
     s to_u8 {
         super::i8::to_u8(to_i8(s))
+    }
+    s to_u12 {
+        super::i12::to_u12(to_i12(s))
     }
     s to_u16 {
         super::i16::to_u16(to_i16(s))
@@ -382,6 +459,9 @@ conversions!(u8, u8 {
             (s - 128) as i8
         }
     }
+    s to_i12 {
+        I12::new_unchecked((s as i16 - 128) << 4)
+    }
     s to_i16 {
         (s as i16 - 128) << 8
     }
@@ -397,6 +477,7 @@ conversions!(u8, u8 {
     s to_i64 {
         (s as i64 - 128) << 56
     }
+    s to_u12 { U12::new_unchecked((s as i16) << 4) }
     s to_u16 { (s as u16) << 8 }
     s to_u24 { U24::new_unchecked((s as i32) << 16) }
     s to_u32 { (s as u32) << 24 }
@@ -406,8 +487,37 @@ conversions!(u8, u8 {
     s to_f64 { super::i8::to_f64(to_i8(s)) }
 });
 
+conversions!(U12, u12 {
+    s to_i8 { super::u8::to_i8(to_u8(s)) }
+    s to_i12 { I12::new_unchecked(s.inner() - 2048) }
+    s to_i16 { super::u16::to_i16(to_u16(s)) }
+    s to_i24 {
+        I24::new_unchecked((s.inner() as i32 - 2048) << 12)
+    }
+    s to_i32 {
+        (s.inner() as i32 - 2048) << 20
+    }
+    s to_i48 {
+        I48::new_unchecked(((s.inner() as i64) - 2048) << 36)
+    }
+    s to_i64 {
+        (s.inner() as i64 - 2048) << 52
+    }
+    s to_u8 { (s.inner() >> 4) as u8 }
+    s to_u16 { (s.inner() << 4) as u16 }
+    s to_u24 { U24::new_unchecked((s.inner() as i32) << 12) }
+    s to_u32 { (s.inner() as u32) << 20 }
+    s to_u48 { U48::new_unchecked((s.inner() as i64) << 36) }
+    s to_u64 { (s.inner() as u64) << 52 }
+    s to_f32 { super::i24::to_f32(to_i24(s)) }
+    s to_f64 { super::i24::to_f64(to_i24(s)) }
+});
+
 conversions!(u16, u16 {
     s to_i8 { super::u8::to_i8(to_u8(s)) }
+    s to_i12 {
+        super::u12::to_i12(to_u12(s))
+    }
     s to_i16 {
         if s < 32_768 {
             s as i16 - 32_767 - 1
@@ -428,6 +538,7 @@ conversions!(u16, u16 {
         (s as i64 - 32_768) << 48
     }
     s to_u8 { (s >> 8) as u8 }
+    s to_u12 { U12::new_unchecked(s as i16 >> 4) }
     s to_u24 { U24::new_unchecked((s as i32) << 8) }
     s to_u32 { (s as u32) << 16 }
     s to_u48 { U48::new_unchecked((s as i64) << 32) }
@@ -438,6 +549,9 @@ conversions!(u16, u16 {
 
 conversions!(U24, u24 {
     s to_i8 { super::u8::to_i8(to_u8(s)) }
+    s to_i12 {
+        I12::new_unchecked(((s.inner() - 8_388_608) >> 12) as i16)
+    }
     s to_i16 { super::u16::to_i16(to_u16(s)) }
     s to_i24 {
         I24::new_unchecked(s.inner() - 8_388_608)
@@ -452,6 +566,7 @@ conversions!(U24, u24 {
         (s.inner() as i64 - 8_388_608) << 40
     }
     s to_u8 { (s.inner() >> 16) as u8 }
+    s to_u12 { U12::new_unchecked((s.inner() >> 12)as i16) }
     s to_u16 { (s.inner() >> 8) as u16 }
     s to_u32 { (s.inner() as u32) << 8 }
     s to_u48 { U48::new_unchecked((s.inner() as i64) << 24) }
@@ -462,6 +577,7 @@ conversions!(U24, u24 {
 
 conversions!(u32, u32 {
     s to_i8 { super::u8::to_i8(to_u8(s)) }
+    s to_i12 { super::u12::to_i12(to_u12(s)) }
     s to_i16 { super::u16::to_i16(to_u16(s)) }
     s to_i24 { super::u24::to_i24(to_u24(s)) }
     s to_i32 {
@@ -478,6 +594,7 @@ conversions!(u32, u32 {
         (s as i64 - 2_147_483_648) << 32
     }
     s to_u8 { (s >> 24) as u8 }
+    s to_u12 { U12::new_unchecked((s >> 20) as i16) }
     s to_u16 { (s >> 16) as u16 }
     s to_u24 { U24::new_unchecked((s >> 8) as i32) }
     s to_u48 { U48::new_unchecked((s as i64) << 16) }
@@ -488,6 +605,7 @@ conversions!(u32, u32 {
 
 conversions!(U48, u48 {
     s to_i8 { super::u8::to_i8(to_u8(s)) }
+    s to_i12 { super::u12::to_i12(to_u12(s)) }
     s to_i16 { super::u16::to_i16(to_u16(s)) }
     s to_i24 { super::u24::to_i24(to_u24(s)) }
     s to_i32 { super::u32::to_i32(to_u32(s)) }
@@ -498,6 +616,7 @@ conversions!(U48, u48 {
         (s.inner() - 140_737_488_355_328) << 16
     }
     s to_u8 { (s.inner() >> 40) as u8 }
+    s to_u12 { U12::new_unchecked((s.inner() >> 36) as i16) }
     s to_u16 { (s.inner() >> 32) as u16 }
     s to_u24 { U24::new_unchecked((s.inner() >> 24) as i32) }
     s to_u32 { (s.inner() >> 16) as u32 }
@@ -508,6 +627,7 @@ conversions!(U48, u48 {
 
 conversions!(u64, u64 {
     s to_i8 { super::u8::to_i8(to_u8(s)) }
+    s to_i12 { super::u12::to_i12(to_u12(s)) }
     s to_i16 { super::u16::to_i16(to_u16(s)) }
     s to_i24 { super::u24::to_i24(to_u24(s)) }
     s to_i32 { super::u32::to_i32(to_u32(s)) }
@@ -520,6 +640,7 @@ conversions!(u64, u64 {
         }
     }
     s to_u8 { (s >> 56) as u8 }
+    s to_u12 { U12::new_unchecked((s >> 56) as i16) }
     s to_u16 { (s >> 48) as u16 }
     s to_u24 { U24::new_unchecked((s >> 40) as i32) }
     s to_u32 { (s >> 32) as u32 }
@@ -531,6 +652,11 @@ conversions!(u64, u64 {
 // The following conversions assume `-1.0 <= s < 1.0` (note that +1.0 is excluded) and will
 // overflow otherwise.
 conversions!(f32, f32 {
+    s to_i12 { I12::new_unchecked((s * 2048.0) as i16) }
+    s to_u12 {
+        super::i12::to_u12(to_i12(s))
+    }
+
     s to_i8 { (s * 128.0) as i8 }
     s to_i16 { (s * 32_768.0) as i16 }
     s to_i24 { I24::new_unchecked((s * 8_388_608.0) as i32) }
@@ -549,6 +675,11 @@ conversions!(f32, f32 {
 // The following conversions assume `-1.0 <= s < 1.0` (note that +1.0 is excluded) and will
 // overflow otherwise.
 conversions!(f64, f64 {
+    s to_i12 { I12::new_unchecked((s * 2048.0) as i16) }
+    s to_u12 {
+        super::i12::to_u12(to_i12(s))
+    }
+
     s to_i8 { (s * 128.0) as i8 }
     s to_i16 { (s * 32_768.0) as i16 }
     s to_i24 { I24::new_unchecked((s * 8_388_608.0) as i32) }
@@ -593,86 +724,98 @@ macro_rules! impl_from_sample {
 }
 
 impl_from_sample! {i8, to_i8 from
-    {i16:i16} {I24:i24} {i32:i32} {I48:i48} {i64:i64}
-    {u8:u8} {u16:u16} {U24:u24} {u32:u32} {U48:u48} {u64:u64}
+    {I12:i12} {i16:i16} {I24:i24} {i32:i32} {I48:i48} {i64:i64}
+    {u8:u8} {U12:u12} {u16:u16} {U24:u24} {u32:u32} {U48:u48} {u64:u64}
+    {f32:f32} {f64:f64}
+}
+
+impl_from_sample! {I12, to_i12 from
+    {i8:i8} {i16:i16} {I24:i24} {i32:i32} {I48:i48} {i64:i64}
+    {u8:u8} {U12:u12} {u16:u16} {U24:u24} {u32:u32} {U48:u48} {u64:u64}
     {f32:f32} {f64:f64}
 }
 
 impl_from_sample! {i16, to_i16 from
-    {i8:i8} {I24:i24} {i32:i32} {I48:i48} {i64:i64}
-    {u8:u8} {u16:u16} {U24:u24} {u32:u32} {U48:u48} {u64:u64}
+    {i8:i8} {I12:i12} {I24:i24} {i32:i32} {I48:i48} {i64:i64}
+    {u8:u8} {U12:u12} {u16:u16} {U24:u24} {u32:u32} {U48:u48} {u64:u64}
     {f32:f32} {f64:f64}
 }
 
 impl_from_sample! {I24, to_i24 from
-    {i8:i8} {i16:i16} {i32:i32} {I48:i48} {i64:i64}
-    {u8:u8} {u16:u16} {U24:u24} {u32:u32} {U48:u48} {u64:u64}
+    {i8:i8} {I12:i12} {i16:i16} {i32:i32} {I48:i48} {i64:i64}
+    {u8:u8} {U12:u12} {u16:u16} {U24:u24} {u32:u32} {U48:u48} {u64:u64}
     {f32:f32} {f64:f64}
 }
 
 impl_from_sample! {i32, to_i32 from
-    {i8:i8} {i16:i16} {I24:i24} {I48:i48} {i64:i64}
-    {u8:u8} {u16:u16} {U24:u24} {u32:u32} {U48:u48} {u64:u64}
+    {i8:i8} {I12:i12} {i16:i16} {I24:i24} {I48:i48} {i64:i64}
+    {u8:u8} {U12:u12} {u16:u16} {U24:u24} {u32:u32} {U48:u48} {u64:u64}
     {f32:f32} {f64:f64}
 }
 
 impl_from_sample! {I48, to_i48 from
-    {i8:i8} {i16:i16} {I24:i24} {i32:i32} {i64:i64}
-    {u8:u8} {u16:u16} {U24:u24} {u32:u32} {U48:u48} {u64:u64}
+    {i8:i8} {I12:i12} {i16:i16} {I24:i24} {i32:i32} {i64:i64}
+    {u8:u8} {U12:u12} {u16:u16} {U24:u24} {u32:u32} {U48:u48} {u64:u64}
     {f32:f32} {f64:f64}
 }
 
 impl_from_sample! {i64, to_i64 from
-    {i8:i8} {i16:i16} {I24:i24} {i32:i32} {I48:i48}
-    {u8:u8} {u16:u16} {U24:u24} {u32:u32} {U48:u48} {u64:u64}
+    {i8:i8} {I12:i12} {i16:i16} {I24:i24} {i32:i32} {I48:i48}
+    {u8:u8} {U12:u12} {u16:u16} {U24:u24} {u32:u32} {U48:u48} {u64:u64}
     {f32:f32} {f64:f64}
 }
 
 impl_from_sample! {u8, to_u8 from
-    {i8:i8} {i16:i16} {I24:i24} {i32:i32} {I48:i48} {i64:i64}
-    {u16:u16} {U24:u24} {u32:u32} {U48:u48} {u64:u64}
+    {i8:i8} {I12:i12} {i16:i16} {I24:i24} {i32:i32} {I48:i48} {i64:i64}
+    {u16:u16} {U12:u12} {U24:u24} {u32:u32} {U48:u48} {u64:u64}
     {f32:f32} {f64:f64}
 }
 
-impl_from_sample! {u16, to_u16 from
+impl_from_sample! {U12, to_u12 from
     {i8:i8} {i16:i16} {I24:i24} {i32:i32} {I48:i48} {i64:i64}
     {u8:u8} {U24:u24} {u32:u32} {U48:u48} {u64:u64}
     {f32:f32} {f64:f64}
 }
 
+impl_from_sample! {u16, to_u16 from
+    {i8:i8} {I12:i12} {i16:i16} {I24:i24} {i32:i32} {I48:i48} {i64:i64}
+    {u8:u8} {U12:u12} {U24:u24} {u32:u32} {U48:u48} {u64:u64}
+    {f32:f32} {f64:f64}
+}
+
 impl_from_sample! {U24, to_u24 from
-    {i8:i8} {i16:i16} {I24:i24} {i32:i32} {I48:i48} {i64:i64}
-    {u8:u8} {u16:u16} {u32:u32} {U48:u48} {u64:u64}
+    {i8:i8} {I12:i12} {i16:i16} {I24:i24} {i32:i32} {I48:i48} {i64:i64}
+    {u8:u8} {U12:u12} {u16:u16} {u32:u32} {U48:u48} {u64:u64}
     {f32:f32} {f64:f64}
 }
 
 impl_from_sample! {u32, to_u32 from
-    {i8:i8} {i16:i16} {I24:i24} {i32:i32} {I48:i48} {i64:i64}
-    {u8:u8} {u16:u16} {U24:u24} {U48:u48} {u64:u64}
+    {i8:i8} {I12:i12} {i16:i16} {I24:i24} {i32:i32} {I48:i48} {i64:i64}
+    {u8:u8} {U12:u12} {u16:u16} {U24:u24} {U48:u48} {u64:u64}
     {f32:f32} {f64:f64}
 }
 
 impl_from_sample! {U48, to_u48 from
-    {i8:i8} {i16:i16} {I24:i24} {i32:i32} {I48:i48} {i64:i64}
-    {u8:u8} {u16:u16} {U24:u24} {u32:u32} {u64:u64}
+    {i8:i8} {I12:i12} {i16:i16} {I24:i24} {i32:i32} {I48:i48} {i64:i64}
+    {u8:u8} {U12:u12} {u16:u16} {U24:u24} {u32:u32} {u64:u64}
     {f32:f32} {f64:f64}
 }
 
 impl_from_sample! {u64, to_u64 from
-    {i8:i8} {i16:i16} {I24:i24} {i32:i32} {I48:i48} {i64:i64}
-    {u8:u8} {u16:u16} {U24:u24} {u32:u32} {U48:u48}
+    {i8:i8} {I12:i12} {i16:i16} {I24:i24} {i32:i32} {I48:i48} {i64:i64}
+    {u8:u8} {U12:u12} {u16:u16} {U24:u24} {u32:u32} {U48:u48}
     {f32:f32} {f64:f64}
 }
 
 impl_from_sample! {f32, to_f32 from
-    {i8:i8} {i16:i16} {I24:i24} {i32:i32} {I48:i48} {i64:i64}
-    {u8:u8} {u16:u16} {U24:u24} {u32:u32} {U48:u48} {u64:u64}
+    {i8:i8} {I12:i12} {i16:i16} {I24:i24} {i32:i32} {I48:i48} {i64:i64}
+    {u8:u8} {U12:u12} {u16:u16} {U24:u24} {u32:u32} {U48:u48} {u64:u64}
     {f64:f64}
 }
 
 impl_from_sample! {f64, to_f64 from
-    {i8:i8} {i16:i16} {I24:i24} {i32:i32} {I48:i48} {i64:i64}
-    {u8:u8} {u16:u16} {U24:u24} {u32:u32} {U48:u48} {u64:u64}
+    {i8:i8} {I12:i12} {i16:i16} {I24:i24} {i32:i32} {I48:i48} {i64:i64}
+    {u8:u8} {U12:u12} {u16:u16} {U24:u24} {u32:u32} {U48:u48} {u64:u64}
     {f32:f32}
 }
 
